@@ -1,0 +1,16 @@
+[
+  {
+    "id": "mi-primer-post",
+    "title": "Mi primer post",
+    "date": "10 Nov 2026",
+    "summary": "Inicio este espacio para compartir ideas, aprendizajes y reflexiones sobre ingeniería y tecnología.",
+    "content": "<p>Este es el primer artículo del blog. En este espacio voy a compartir ideas sobre ingeniería, arquitectura, liderazgo técnico y experiencias de trabajo real.</p><p>La idea es ir publicando contenido útil y claro: aprendizajes, decisiones de diseño, herramientas que estoy probando y reflexiones sobre cómo construir sistemas más sostenibles.</p><h2>¿Qué voy a escribir?</h2><ul><li>Arquitectura y patrones de diseño.</li><li>Backend y servicios distribuidos.</li><li>Liderazgo técnico y trabajo en equipo.</li><li>Aprendizajes cotidianos en tecnología.</li></ul>"
+  },
+  {
+    "id": "arquitectura-sencilla",
+    "title": "Arquitectura simple, confiable y mantenible",
+    "date": "18 Nov 2026",
+    "summary": "Cuando la complejidad crece, la claridad del diseño se vuelve más importante que la cantidad de tecnologías.",
+    "content": "<p>En software, la tendencia natural es sumar capas, dependencias y herramientas. Sin embargo, la arquitectura que mejor escala no siempre es la más compleja: es la que permite entender, cambiar y operar con confianza.</p><p>Un buen diseño comienza por definir límites claros, separar responsabilidades y priorizar observabilidad desde el principio.</p>"
+  }
+]
