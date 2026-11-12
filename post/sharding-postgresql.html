@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sharding en PostgreSQL | Emiliano Izquierdo</title>
+    <meta
+      name="description"
+      content="Guía de sharding en PostgreSQL, principios, caso de uso y arquitectura para escalar bases de datos."
+    />
+    <link rel="stylesheet" href="../assets/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container nav-wrap">
+        <a href="../index.html" class="brand">Emiliano Izquierdo</a>
+        <nav class="site-nav" aria-label="Navegación principal">
+          <a href="../index.html#mi">Mi</a>
+          <a href="../index.html#experiencia">Experiencia</a>
+          <a href="../blog/index.html">Blog</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container page-content">
+      <article class="article-card article-post">
+        <p class="eyebrow">Nov 12, 2026 · @Emiliano</p>
+        <h1>Sharding en PostgreSQL: guía y casos de uso</h1>
+
+        <div class="article-content">
+          <h2>Qué es el sharding</h2>
+          <p>
+            El sharding divide los datos de una tabla grande entre varias bases de datos independientes
+            (shards), de modo que cada una guarda solo una parte de las filas. Sirve para escalar
+            horizontalmente cuando un único servidor ya no alcanza en almacenamiento, escrituras o CPU.
+          </p>
+          <p>
+            Cada shard es una base de datos completa, normalmente en su propio servidor, con el mismo schema
+            que los demás. Por ejemplo, la tabla <code>pedidos</code> existe en las tres bases con las mismas
+            columnas e índices, pero cada una contiene solo los pedidos de un tercio de los usuarios.
+          </p>
+          <p>
+            PostgreSQL no trae sharding automático. Incluye particionamiento declarativo y Foreign Data Wrappers,
+            pero repartir los datos entre servidores requiere una extensión (Citus), un proxy o lógica en la aplicación.
+          </p>
+
+          <h2>Sharding, particionamiento y replicación</h2>
+          <p>
+            Los tres conceptos se confunden seguido, pero resuelven problemas distintos: el sharding reparte los datos
+            entre servidores, el particionamiento los reparte dentro de un servidor y la replicación los copia completos.
+          </p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th>Qué hace</th>
+                <th>Dónde vive</th>
+                <th>Para qué sirve</th>
+                <th>Soporte en PostgreSQL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Sharding</td>
+                <td>Divide las filas entre varias bases</td>
+                <td>Varios servidores</td>
+                <td>Escalar escrituras y volumen de datos</td>
+                <td>Requiere Citus, proxy o lógica en la app</td>
+              </tr>
+              <tr>
+                <td>Particionamiento</td>
+                <td>Divide una tabla en partes</td>
+                <td>Un solo servidor</td>
+                <td>Mantenimiento y consultas más rápidas</td>
+                <td>Nativo (<code>PARTITION BY RANGE</code>, <code>LIST</code>, <code>HASH</code>)</td>
+              </tr>
+              <tr>
+                <td>Replicación</td>
+                <td>Copia todos los datos a otros servidores</td>
+                <td>Varios servidores</td>
+                <td>Respaldo y repartir lecturas</td>
+                <td>Nativa (streaming y lógica)</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p>
+            En la práctica se combinan: cada shard puede tener sus propias réplicas, y las tablas dentro de un shard
+            pueden estar particionadas.
+          </p>
+
+          <h2>Cómo funciona</h2>
+          <p>
+            Una función determinista decide en qué shard cae cada fila a partir de la shard key, una columna como
+            <code>user_id</code> o <code>tenant_id</code>. El router no busca el dato: lo calcula, y como usa la misma
+            función al escribir y al leer, siempre llega al mismo lugar.
+          </p>
+
+          <div class="diagram-card" aria-label="Diagrama de ruteo por shard key">
+            <div class="diagram-node">Router</div>
+            <div class="diagram-arrow">→</div>
+            <div class="diagram-node shard">Shard 1</div>
+            <div class="diagram-node shard">Shard 2</div>
+            <div class="diagram-node shard">Shard 3</div>
+          </div>
+
+          <p>
+            Para <code>user_id = 7</code> el router calcula <code>7 % 3 = 1</code> y envía la consulta solo al Shard 2,
+            mientras los otros dos no participan. El ejemplo usa el valor directo por simplicidad: en la práctica se
+            aplica antes una función hash estable.
+          </p>
+
+          <h3>La shard key y las estrategias de distribución</h3>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Estratégia</th>
+                <th>Cómo reparte</th>
+                <th>Ventaja</th>
+                <th>Riesgo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Hash</td>
+                <td><code>hash(user_id) % N</code></td>
+                <td>Reparto uniforme</td>
+                <td>Las consultas por rango son costosas</td>
+              </tr>
+              <tr>
+                <td>Rango</td>
+                <td>Usuarios 1 a 1M en el shard A</td>
+                <td>Simple de entender</td>
+                <td>Puntos calientes si las altas son consecutivas</td>
+              </tr>
+              <tr>
+                <td>Directorio</td>
+                <td>Una tabla que mapea cada clave a su shard</td>
+                <td>Flexible: se puede mover una clave puntual</td>
+                <td>Una consulta extra y un punto más que mantener</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>El router de shards</h3>
+          <p>
+            El router necesita dos cosas: la función de distribución y una tabla que mapea el resultado a una conexión
+            real. Dónde vive depende de la opción elegida.
+          </p>
+
+          <pre><code>SHARDS = {
+    0: "postgres://db1.miempresa.com/app",
+    1: "postgres://db2.miempresa.com/app",
+    2: "postgres://db3.miempresa.com/app",
+}
+
+def shard_para(user_id):
+    return SHARDS[hash_estable(user_id) % 3]
+
+conn = conectar(shard_para(7))
+conn.execute("SELECT * FROM pedidos WHERE user_id = 7")
+</code></pre>
+
+          <h3>Claves que no son números: UUID y texto</h3>
+          <p>
+            Se usa un hash del valor, no el valor mismo: UUID, bytes, hash, entero, módulo. La función hash tiene que
+            ser estable entre ejecuciones (<code>md5</code>, <code>xxhash</code>, <code>murmur3</code>). El
+            <code>hash()</code> incorporado de Python no sirve, porque devuelve valores distintos en cada proceso.
+          </p>
+
+          <pre><code>import hashlib, uuid
+
+def shard_para(user_id: uuid.UUID, n_shards=3):
+    h = hashlib.md5(user_id.bytes).digest()
+    return int.from_bytes(h[:8], "big") % n_shards
+</code></pre>
+
+          <p>
+            Un UUID v4 es una buena shard key: reparte parejo y se genera sin coordinación entre shards, algo que un
+            <code>BIGSERIAL</code> no permite. Con UUID v7, que empieza con una marca de tiempo, conviene siempre el
+            sharding por hash, porque por rango todas las escrituras nuevas caerían en el último shard.
+          </p>
+
+          <h3>Qué exige este diseño</h3>
+          <ul>
+            <li>La consulta tiene que incluir la shard key. Sin ella, el router debe preguntar a todos los shards y juntar los resultados.</li>
+            <li>Las tablas relacionadas deben llevar la misma clave para quedar en el mismo shard y hacer joins locales.</li>
+            <li>Las migraciones de schema se aplican en todos los shards.</li>
+            <li>Las tablas chicas y comunes suelen replicarse completas en cada uno.</li>
+          </ul>
+
+          <h2>Opciones para implementarlo en PostgreSQL</h2>
+          <p>
+            PostgreSQL no trae un router de shards, así que alguien tiene que cumplir ese rol: o lo programás vos,
+            o lo trae una herramienta. La diferencia entre las opciones es cuánto código del router escribís y mantenés.
+          </p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Opción</th>
+                <th>¿Escribís el router?</th>
+                <th>Dónde vive el router</th>
+                <th>Cuándo conviene</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Sharding en la aplicación</td>
+                <td>Sí</td>
+                <td>Un módulo dentro de tu app</td>
+                <td>Pocos shards y control total sobre el ruteo</td>
+              </tr>
+              <tr>
+                <td>Proxy externo</td>
+                <td>No, se configura</td>
+                <td>Un servicio entre la app y las bases</td>
+                <td>Mantener el código de la app casi sin cambios</td>
+              </tr>
+              <tr>
+                <td>Citus</td>
+                <td>No</td>
+                <td>El nodo coordinador</td>
+                <td>Multi-tenant y SQL casi completo</td>
+              </tr>
+              <tr>
+                <td>Base distribuida compatible</td>
+                <td>No</td>
+                <td>Integrado en cada nodo</td>
+                <td>Reparto automático desde el origen</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>Sharding en la aplicación</h3>
+          <p>
+            Una función como <code>shard_para(user_id)</code> y un diccionario de conexiones. Da control total, pero el
+            ruteo, las migraciones en todos los shards, el rebalanceo y las consultas entre shards quedan en tu código.
+          </p>
+
+          <h3>Proxy externo</h3>
+          <p>
+            La app se conecta al proxy creyendo que es una sola base, y este decide a qué shard enviar cada consulta.
+            Se configura la shard key, la cantidad de shards y los servidores. Algunos proyectos son jóvenes y no cubren
+            todo el SQL, por lo que conviene evaluarlos antes de usarlos en producción.
+          </p>
+
+          <h3>Citus</h3>
+          <p>
+            Es una extensión de PostgreSQL que lo convierte en una base distribuida: un nodo coordinador y varios workers.
+            La app se conecta al coordinador con SQL normal.
+          </p>
+
+          <pre><code>CREATE EXTENSION citus;
+
+SELECT create_distributed_table('pedidos', 'user_id');
+</code></pre>
+
+          <p>
+            Citus aplica la función hash propia del tipo de dato (<code>uuid</code>, <code>int</code>, <code>text</code>)
+            y obtiene un entero de 32 bits. Ese espacio se divide en rangos fijos, cada uno propiedad de un shard,
+            y la metadata vive en el coordinador. Por defecto crea 32 shards lógicos repartidos entre los workers, lo que
+            facilita el rebalanceo.
+          </p>
+
+          <h2>Casos de uso</h2>
+          <p>
+            El sharding se justifica cuando un solo servidor ya no puede con el volumen de datos o con la carga de escritura,
+            y cuando existe una clave natural por la que casi todas las consultas filtran.
+          </p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Caso de uso</th>
+                <th>Shard key típica</th>
+                <th>Por qué encaja</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>SaaS multi-tenant</td>
+                <td><code>tenant_id</code></td>
+                <td>Todas las consultas de un cliente van a un solo shard y se puede aislar a los clientes más grandes.</td>
+              </tr>
+              <tr>
+                <td>Aplicaciones con millones de usuarios</td>
+                <td><code>user_id</code></td>
+                <td>Las lecturas y escrituras de un usuario quedan juntas y la carga se reparte.</td>
+              </tr>
+              <tr>
+                <td>Alto volumen de escrituras</td>
+                <td><code>user_id</code> o <code>device_id</code></td>
+                <td>Cada shard absorbe una parte de las escrituras.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p>
+            Se ve mejor con un caso concreto. En una tienda en línea con <code>pedidos</code> shardeada por
+            <code>user_id</code>, ver los pedidos de un usuario es una consulta a un solo shard. Un reporte de ventas
+            totales del día, en cambio, debe recorrer todos los shards y combinar los resultados.
+          </p>
+
+          <h2>Desafíos y cuándo no conviene</h2>
+          <p>
+            El sharding cambia complejidad de escalado por complejidad operativa, así que conviene agotar antes las
+            alternativas más simples.
+          </p>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Desafío</th>
+                <th>Qué pasa</th>
+                <th>Cómo se mitiga</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Consultas entre shards</td>
+                <td>Los JOINs y agregaciones sobre varios shards son más lentos</td>
+                <td>Elegir una shard key que cubra las consultas frecuentes</td>
+              </tr>
+              <tr>
+                <td>Transacciones distribuidas</td>
+                <td>Garantizar consistencia entre nodos es difícil</td>
+                <td>Diseñar para que cada transacción toque un solo shard</td>
+              </tr>
+              <tr>
+                <td>Rebalanceo</td>
+                <td>Agregar o quitar shards implica mover datos</td>
+                <td>Consistent hashing, shards lógicos o una tabla de directorio</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="callout">
+            <strong>Regla práctica:</strong> antes de sharding, probar índices adecuados, particionamiento, réplicas de lectura y caché.
+            Si luego de esto las escrituras o el volumen de datos siguen superando a un servidor, el sharding pasa a ser una opción razonable.
+          </div>
+
+          <h2>Sharding con CQRS</h2>
+          <p>
+            CQRS se combina con sharding sin problema: cada lado, escritura y lectura, se shardea por su cuenta, y lo único
+            nuevo es cómo se sincronizan.
+          </p>
+
+          <div class="mini-diagram">
+            <div>Comandos</div>
+            <div>→</div>
+            <div>Cluster escritura</div>
+            <div>→</div>
+            <div>Eventos / outbox</div>
+            <div>→</div>
+            <div>Cluster lectura</div>
+          </div>
+
+          <p>
+            Los comandos entran por el router de escrituras. Un pipeline de eventos alimenta el cluster de lectura, que puede
+            repartir los datos con otra clave. Si el objetivo es solo descargar lecturas del cluster principal, las réplicas de
+            cada shard suelen alcanzar.
+          </p>
+
+          <h2>Conclusión</h2>
+          <p>
+            El sharding no es una “solución mágica”: es una decisión de arquitectura para casos muy concretos. Conviene cuando
+            el crecimiento de datos y de carga ya excede un único nodo y se cuenta con una shard key natural. Cuando se diseña
+            bien, permite mantener una base grande y exigente sin perder rendimiento ni aislar clientes.
+          </p>
+        </div>
+
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-wrap">
+        <p>© 2026 Emiliano Izquierdo</p>
+        <p>Backend, arquitectura y aprendizaje constante.</p>
+      </div>
+    </footer>
+  </body>
+</html>

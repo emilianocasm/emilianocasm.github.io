@@ -12,5 +12,12 @@
     "date": "18 Nov 2026",
     "summary": "Cuando la complejidad crece, la claridad del diseño se vuelve más importante que la cantidad de tecnologías.",
     "content": "<p>En software, la tendencia natural es sumar capas, dependencias y herramientas. Sin embargo, la arquitectura que mejor escala no siempre es la más compleja: es la que permite entender, cambiar y operar con confianza.</p><p>Un buen diseño comienza por definir límites claros, separar responsabilidades y priorizar observabilidad desde el principio.</p>"
+  },
+  {
+    "id": "sharding-postgresql",
+    "title": "Sharding en PostgreSQL: guía y casos de uso",
+    "date": "12 Nov 2026",
+    "summary": "Una guía práctica de cómo dividir una base grande en shards, cuándo funciona y qué desafíos trae.",
+    "content": "<p>El sharding divide los datos de una tabla grande entre varios servidores para escalar horizontalmente cuando un único nodo ya no alcanza en almacenamiento, escrituras o CPU.</p><p>Se combina con patrones como particionamiento, replicación, CQRS y una shard key clara para mantener el sistema estable en crecimiento.</p>"
   }
 ]

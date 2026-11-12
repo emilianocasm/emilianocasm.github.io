@@ -77,6 +77,3 @@ Argentina | Aug 2011 – Jun 2012
 
 **Engineering Practices:** Technical Leadership, System Design, Code Reviews, Automated Testing, Agile, Team Mentoring
 
-## EDUCATION
-
-[Add your degree, institution, and graduation year]

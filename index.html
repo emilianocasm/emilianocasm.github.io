@@ -87,6 +87,260 @@
 
       <section class="section container">
         <div class="section-header">
+          <h2>Impacto y capacidades</h2>
+        </div>
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3>Especialidades</h3>
+            <canvas id="skillsChart" width="420" height="220" aria-label="Gráfico de especialidades"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Visión de entrega</h3>
+            <canvas id="deliveryChart" width="420" height="220" aria-label="Gráfico de visión de entrega"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section class="section container">
+        <div class="section-header">
+          <h2>Sharding en PostgreSQL</h2>
+        </div>
+
+        <article class="article-card">
+          <div class="article-intro">
+            <p class="eyebrow">Guía y casos de uso</p>
+            <h3>Dividir una base grande para escalar sin perder coherencia.</h3>
+            <p>
+              El sharding divide los datos de una tabla grande entre varios servidores para escalar
+              horizontalmente cuando un único nodo ya no alcanza en almacenamiento, escrituras o CPU.
+            </p>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-card">
+              <strong>Sharding</strong>
+              <span>Reparte filas entre varios servidores</span>
+            </div>
+            <div class="stat-card">
+              <strong>Particionamiento</strong>
+              <span>Divide una tabla dentro de un mismo servidor</span>
+            </div>
+            <div class="stat-card">
+              <strong>Replicación</strong>
+              <span>Copia todo el dataset a otros nodos</span>
+            </div>
+          </div>
+
+          <div class="content-block article-content">
+            <h4>Qué es el sharding</h4>
+            <p>
+              El sharding divide los datos de una tabla grande entre varias bases de datos independientes
+              (shards), de modo que cada una guarda solo una parte de las filas. Sirve para escalar
+              horizontalmente cuando un único servidor ya no alcanza en almacenamiento, escrituras o CPU.
+            </p>
+            <p>
+              Cada shard es una base de datos completa, normalmente en su propio servidor, con el mismo
+              schema que los demás. La tabla <code>pedidos</code> existe en cada base con las mismas columnas,
+              pero cada una contiene solo los pedidos de un subconjunto de usuarios.
+            </p>
+
+            <div class="diagram-card" aria-label="Diagrama de sharding por shard key">
+              <div class="diagram-node">Router</div>
+              <div class="diagram-arrow">→</div>
+              <div class="diagram-node shard">Shard 1</div>
+              <div class="diagram-node shard">Shard 2</div>
+              <div class="diagram-node shard">Shard 3</div>
+            </div>
+
+            <h4>Sharding, particionamiento y replicación</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Concepto</th>
+                  <th>Qué hace</th>
+                  <th>Donde vive</th>
+                  <th>Para qué sirve</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Sharding</td>
+                  <td>Divide filas entre varias bases</td>
+                  <td>Varios servidores</td>
+                  <td>Escalar escrituras y volumen de datos</td>
+                </tr>
+                <tr>
+                  <td>Particionamiento</td>
+                  <td>Divide una tabla en partes</td>
+                  <td>Un solo servidor</td>
+                  <td>Mantenimiento y consultas más rápidas</td>
+                </tr>
+                <tr>
+                  <td>Replicación</td>
+                  <td>Copia todos los datos</td>
+                  <td>Varios servidores</td>
+                  <td>Respaldo y lecturas distribuidas</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h4>Cómo funciona</h4>
+            <p>
+              Una función determinista decide en qué shard cae cada fila a partir de la <strong>shard key</strong>,
+              una columna como <code>user_id</code> o <code>tenant_id</code>. El router calcula la ubicación, y como usa
+              la misma función al escribir y al leer, siempre llega al mismo lugar.
+            </p>
+            <pre><code>SHARDS = {
+    0: "postgres://db1.miempresa.com/app",
+    1: "postgres://db2.miempresa.com/app",
+    2: "postgres://db3.miempresa.com/app",
+}
+
+def shard_para(user_id):
+    return SHARDS[hash_estable(user_id) % 3]
+</code></pre>
+
+            <h4>La shard key y estrategias de distribución</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Estrategia</th>
+                  <th>Cómo reparte</th>
+                  <th>Ventaja</th>
+                  <th>Riesgo</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Hash</td>
+                  <td><code>hash(user_id) % N</code></td>
+                  <td>Reparto uniforme</td>
+                  <td>Consultas por rango son costosas</td>
+                </tr>
+                <tr>
+                  <td>Rango</td>
+                  <td>Usuarios de 1 a 1M en shard A</td>
+                  <td>Fácil de entender</td>
+                  <td>Picos de carga por rangos consecutivos</td>
+                </tr>
+                <tr>
+                  <td>Directorio</td>
+                  <td>Tabla de mapeo por clave</td>
+                  <td>Flexible y mobile</td>
+                  <td>Consulta extra y más mantenimiento</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h4>Qué exige este diseño</h4>
+            <ul>
+              <li>La consulta debe incluir la shard key para que el router pueda enviar la solicitud a un solo shard.</li>
+              <li>Tablas relacionadas deben compartir la misma clave para que los joins sean locales.</li>
+              <li>Las migraciones de schema se aplican en todos los shards.</li>
+              <li>Tablas pequeñas o maestras suelen replicarse en cada shard.</li>
+            </ul>
+
+            <h4>Opciones para implementarlo en PostgreSQL</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Opción</th>
+                  <th>Router</th>
+                  <th>Cuándo conviene</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Sharding en la aplicación</td>
+                  <td>Lo escribís vos</td>
+                  <td>Control total y pocos shards</td>
+                </tr>
+                <tr>
+                  <td>Proxy externo</td>
+                  <td>Servicio entre app y bases</td>
+                  <td>App casi sin cambios</td>
+                </tr>
+                <tr>
+                  <td>Citus</td>
+                  <td>Coordinador + workers</td>
+                  <td>SQL casi completo y multi-tenant</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h4>Casos de uso</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>Caso</th>
+                  <th>Shard key típica</th>
+                  <th>Por qué encaja</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SaaS multi-tenant</td>
+                  <td><code>tenant_id</code></td>
+                  <td>Se aislan clientes grandes y todas las consultas de un cliente van al mismo shard.</td>
+                </tr>
+                <tr>
+                  <td>Aplicaciones con millones de usuarios</td>
+                  <td><code>user_id</code></td>
+                  <td>Las lecturas y escrituras de cada usuario quedan juntas.</td>
+                </tr>
+                <tr>
+                  <td>Alto volumen de escrituras</td>
+                  <td><code>user_id</code> o <code>device_id</code></td>
+                  <td>Cada shard absorbe una parte de la carga.</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h4>Desafíos y cuándo no conviene</h4>
+            <ul>
+              <li>Consultas entre shards: JOINs y agregaciones sobre varios nodos son más lentos.</li>
+              <li>Transacciones distribuidas: consistencia entre varios servidores es compleja.</li>
+              <li>Rebalanceo: agregar o quitar shards implica mover datos.</li>
+              <li>Complejidad operativa: backups, monitoreo y migraciones se multiplican.</li>
+            </ul>
+
+            <div class="callout">
+              <strong>Regla práctica:</strong> antes de sharding, probar índices, particionamiento, replicas y caché.
+              Si después de esto sigue habiendo cuello de botella por volumen o por escrituras, sharding es razonable.
+            </div>
+
+            <h4>Sharding con CQRS</h4>
+            <p>
+              CQRS combina bien con sharding: cada lado, escritura y lectura, puede shardear por su propia clave.
+              El cluster de escritura guarda el estado real, y el cluster de lectura proyecta datos en uno o varios
+              modelos optimizados para consultas frecuentes.
+            </p>
+
+            <div class="mini-diagram">
+              <div>Comandos</div>
+              <div>→</div>
+              <div>Cluster escritura</div>
+              <div>→</div>
+              <div>Eventos / outbox</div>
+              <div>→</div>
+              <div>Cluster lectura</div>
+            </div>
+
+            <p>
+              En costo-beneficio, si el objetivo es solo sacar lecturas del primario, replicas de lectura suelen ser
+              suficientes. Si la consulta requiere otra forma de modelado o otra shard key, CQRS completo gana.
+            </p>
+          </div>
+
+          <div class="pdf-actions">
+            <a class="button primary" href="data/Sharding%20en%20PostgreSQL%20gu%C3%ADa%20y%20casos%20de%20uso.pdf" target="_blank" rel="noopener noreferrer">Abrir PDF original</a>
+            <a class="button secondary" href="data/Sharding%20en%20PostgreSQL%20gu%C3%ADa%20y%20casos%20de%20uso.pdf" download>Descargar PDF</a>
+          </div>
+        </article>
+      </section>
+
+      <section class="section container">
+        <div class="section-header">
           <h2>Últimos posts</h2>
           <a href="blog/index.html">Ver todos</a>
         </div>
