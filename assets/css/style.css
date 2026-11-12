@@ -397,6 +397,21 @@ img {
   color: var(--muted);
 }
 
+.footer-contact {
+  align-items: flex-end;
+}
+
+.footer-links {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.footer-links a {
+  color: var(--text);
+  text-decoration: none;
+}
+
 .article {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
