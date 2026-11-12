@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const renderPostCard = (post) => `
     <article class="post-card">
       <span class="date">${post.date}</span>
-      <h2><a href="post.html?id=${post.id}">${post.title}</a></h2>
+      <h2><a href="${post.url || `post.html?id=${post.id}`}">${post.title}</a></h2>
       <p>${post.summary}</p>
     </article>
   `;

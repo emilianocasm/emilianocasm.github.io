@@ -18,6 +18,7 @@
     "title": "Sharding en PostgreSQL: guía y casos de uso",
     "date": "12 Nov 2026",
     "summary": "Una guía práctica de cómo dividir una base grande en shards, cuándo funciona y qué desafíos trae.",
+    "url": "/post/sharding-postgresql.html",
     "content": "<p>El sharding divide los datos de una tabla grande entre varios servidores para escalar horizontalmente cuando un único nodo ya no alcanza en almacenamiento, escrituras o CPU.</p><p>Se combina con patrones como particionamiento, replicación, CQRS y una shard key clara para mantener el sistema estable en crecimiento.</p>"
   }
 ]
